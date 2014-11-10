@@ -1,0 +1,30 @@
+#!/bin/bash
+
+echo Running At: `date`
+
+etcd_api=http://${ETCD_API}/v2/keys/app
+haproxy_cfg="/etc/haproxy/haproxy.cfg"
+
+sed -i s~proxy_port~$PORT~g  $haproxy_cfg
+
+echo ectd api: $etcd_api
+
+host_ip=""
+i=0
+while [[ "$i" == "0" || "$i" == "1" || "$host_ip" != "" ]]; do
+    [[ $i == 0 ]] && { app_name=$APP; } || { app_name=$APP\@${i}; }
+    host_ip="$(wget  -qO- ${etcd_api}/$app_name/${app_name}_SERVICE_HOST | grep -Po '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*')"
+    echo $host_ip
+    grep -q "$host_ip" $haproxy_cfg
+    if [[ "$?" != "0" ]]; then
+        echo Adding $host_ip to list of IPs
+        echo "        server ${APP}_${i} $host_ip:$PORT maxconn 5000" >> $haproxy_cfg
+        restart=1
+    fi
+    let i=i+1
+done
+
+if [[ "$restart" == "1" ]]; then
+        #haproxy -f /etc/haproxy/haproxy.cfg -p  "/var/run/haproxy.pid" &
+        service haproxy restart
+fi
